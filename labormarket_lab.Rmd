@@ -1,0 +1,322 @@
+---
+title: "Los Angeles Labor Market 1 Lab"
+author: "Myron Bañez | CPLN 6200: Techniques of Urban Economic Development"
+output: 
+  html_document:
+    code_folding: hide
+    fig_caption: yes
+    toc: true
+    toc_float: true
+editor_options: 
+  markdown: 
+    wrap: sentence
+  chunk_output_type: console
+---
+
+# Introduction
+
+This lab will be one of two labs looking at the labor market in Los Angeles County.
+
+```{r eval=TRUE, echo=TRUE, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+options(scipen=999)
+if(!require(pacman)){install.packages("pacman"); library(pacman)}
+p_load(tidycensus, dplyr, ggplot2, hrbrthemes, here,janitor)
+
+library(tidycensus)
+library(sf)
+library(tidyverse)
+library(sf)
+library(lubridate)
+library(tigris)
+library(gganimate)
+library(riem)
+library(gridExtra)
+library(knitr)
+library(kableExtra)
+library(mapview)
+library(tidycensus)
+library(ggcorrplot)
+library(RColorBrewer)
+library(stargazer)
+library(ggplot2)
+
+emp_status <- get_acs(geography = "metropolitan statistical area/micropolitan statistical area",
+                      year = 2020,
+                      variables = c("White NH" = "S2301_C04_012",
+                      "Black NH" = "S2301_C04_013",
+                      "Amer. Indian NH" = "S2301_C04_014",
+                      "Asian NH" = "S2301_C04_015",
+                      "Native Hawaiian NH" = "S2301_C04_016",
+                      "Other NH" = "S2301_C04_017",
+                      "Two or more NH" = "S2301_C04_018",
+                      "Hispanic/Latinx" = "S2301_C04_019"))
+
+palette2 <- c("#6d597a","#e88c7d")
+palette10 <- c("#283c55","#355070","#6d597a","#915f78","#b56576","#e56b6f","#e77c76","#e88c7d","#eaac8b","#eebba0")
+
+```
+
+# Unemployment by Race 
+
+## Data Wrangling
+```{r eval=TRUE, echo=TRUE, warning=FALSE, message=FALSE}
+emp_status_us <- get_acs(geography = "us",year = 2020,
+                         variables = c("White NH" = "S2301_C04_012",
+"Black NH" = "S2301_C04_013",
+"Amer. Indian NH" = "S2301_C04_014",
+"Asian NH" = "S2301_C04_015",
+"Native Hawaiian NH" = "S2301_C04_016",
+"Other NH" = "S2301_C04_017",
+"Two or more NH" = "S2301_C04_018",
+"Hispanic/Latinx" = "S2301_C04_019"))
+```
+
+The plot indicates that in the Los Angeles MSA, Black non-hispanic, two or more non-hispanic, and White non-hispanic groups experiencing higher unemployment rates when compared to the national level.
+
+```{r eval=TRUE, echo=TRUE, warning=FALSE, message=FALSE}
+la_emp <- emp_status %>%
+  filter(GEOID == "31080") %>%
+  bind_rows(emp_status_us) %>%
+  mutate(NAME = stringr::str_remove(string = NAME,
+                                    pattern = ", PA-NJ-DE-MD Metro Area"))
+
+ggplot(la_emp, aes(variable, estimate, fill = NAME)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Race/Ethnicity", y = "") +
+  
+  scale_y_continuous(labels = function(x) paste0(x, "%")) +
+  scale_fill_manual(values = palette2) +
+  geom_errorbar(aes(ymin = estimate - moe, ymax = estimate + moe),
+                width = .75, position = "dodge") +
+  coord_flip() +
+  theme_minimal() +
+  theme(legend.position = "bottom", legend.text = element_text(size = 8))
+```
+
+# Class of Workers
+
+## Data Wrangling
+```{r eval=TRUE, echo=TRUE, warning=FALSE, message=FALSE}
+worker_class <- get_acs(geography = "metropolitan statistical area/micropolitan statistical area",
+variables = c("Total Emp." = "S2408_C01_001",
+"Private, for-profit" = "S2408_C01_002",
+"Private, not-for-profit" = "S2408_C01_005",
+"Local Gov." = "S2408_C01_006",
+"State Gov." = "S2408_C01_007",
+"Federal" = "S2408_C01_008",
+"Self Employed" = "S2408_C01_009"),
+year = 2020)
+```
+
+```{r eval=TRUE, echo=TRUE, warning=FALSE, message=FALSE}
+worker_class <- worker_class %>%
+  filter(GEOID == "31080") %>%
+  mutate(class_share = estimate/6501703)
+
+worker_class_us <- get_acs(geography = "us",
+                           variables = c("Total Emp." = "S2408_C01_001",
+"Private, for-profit" = "S2408_C01_002",
+"Private, not-for-profit" = "S2408_C01_005",
+"Local Gov." = "S2408_C01_006",
+"State Gov." = "S2408_C01_007",
+"Federal" = "S2408_C01_008",
+"Self Employed" = "S2408_C01_009"), year = 2020)
+worker_class_us <- worker_class_us %>%
+mutate(class_share = estimate/155888980)
+```
+
+Many workers at the MSA and national level work in the private, for profit class. The Los Angeles MSA specifically has a higher rate of self-employed and local government workers than the national rate.
+
+```{r eval=TRUE, echo=TRUE, warning=FALSE, message=FALSE}
+worker_class_la <- worker_class %>%
+  bind_rows(worker_class_us) %>%
+  filter(variable != "Total Emp.")
+
+worker_class_la <- worker_class_la %>%
+  mutate(NAME = stringr::str_remove(string = NAME,
+                                    pattern = ", PA-NJ-DE-MD Metro Area"))
+
+worker_class_la <- worker_class_la %>%
+  mutate(variable = factor(variable,
+                           levels = c("Private, for-profit", "Private, not-for-profit", "Local Gov.", 
+                                      "State Gov.","Federal", "Self Employed")))
+
+ggplot(worker_class_la, aes(variable, class_share, fill = NAME)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Employment Status", y = "") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_manual(values = palette2) +
+  coord_flip() +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+  legend.text = element_text(size = 8))
+```
+
+# Extra
+
+## Unemployment by Educational Attainment
+
+In the Los Angeles MSA, people who identify as less than high school graduate and high school graduate are the predominant groups experiencing unemployment.
+
+```{r eval=TRUE, echo=TRUE, warning=FALSE, message=FALSE}
+ed_status <- get_acs(geography = "metropolitan statistical area/micropolitan statistical area",
+                      year = 2020,
+                     variables = c(
+                       "Less than High School Graduate" = "S2301_C04_032",
+                       "High School Graduate" = "S2301_C04_033",
+                       "Some College or Associate's Degree" = "S2301_C04_034",
+                       "Bachelor's Degree or Higher" = "S2301_C04_035")) 
+
+ed_status_us <- get_acs(geography = "us",year = 2020,
+                         variables = c(
+                       "Less than High School Graduate" = "S2301_C04_032",
+                       "High School Graduate" = "S2301_C04_033",
+                       "Some College or Associate's Degree" = "S2301_C04_034",
+                       "Bachelor's Degree or Higher" = "S2301_C04_035")) 
+
+la_ed <- ed_status %>%
+  filter(GEOID == "31080") %>%
+  bind_rows(ed_status_us) %>%
+  mutate(NAME = stringr::str_remove(string = NAME,
+                                    pattern = ", PA-NJ-DE-MD Metro Area"))
+
+ggplot(la_ed, aes(variable, estimate, fill = NAME)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Race/Ethnicity", y = "") +
+  
+  scale_y_continuous(labels = function(x) paste0(x, "%")) +
+  scale_fill_manual(values = palette2) +
+  geom_errorbar(aes(ymin = estimate - moe, ymax = estimate + moe),
+                width = .75, position = "dodge") +
+  coord_flip() +
+  theme_minimal() +
+  theme(legend.position = "bottom", legend.text = element_text(size = 8))
+
+```
+
+## Employment by Class (Government)
+
+Combining the government classes, the group is still very minimal in compatison to the private, for-profit class.
+```{r eval=TRUE, echo=TRUE, warning=FALSE, message=FALSE}
+worker_class_la <- worker_class_la %>%
+  mutate(class = case_when(variable == "Local Gov." | variable == "State Gov." | variable == "Federal" ~ "Government",
+                           variable == "Private, for-profit" ~ "Private, for-profit",
+                           variable == "Private, not-for-profit" ~ "Private, not-for-profit",
+                           variable == "Self Employed" ~ "Self Employed"))
+
+ggplot(worker_class_la, aes(class, class_share, fill = NAME)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(x = "Employment Status", y = "") +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_manual(values = palette2) +
+  coord_flip() +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+  legend.text = element_text(size = 8))
+
+
+```
+
+## Top 10 Occupations in Los Angeles MSA
+```{r eval=TRUE, echo=TRUE, warning=FALSE, message=FALSE}
+oes <- read_csv("MSAOES.csv")
+oes_nat <- read_csv("oes_nat.csv")
+
+oes_data <- oes %>%
+  inner_join(oes_nat, by = "Occupation (SOC code)",
+  suffix = c("_msa", "_national"))
+
+oes_data <- oes_data %>% 
+  rename(emp_msa = "Employment(1)_msa")
+
+oes_data <- oes_data %>% 
+  rename(hour_mean_wage_msa = "Hourly mean wage_msa",
+         ann_mean_wage_msa = "Annual mean wage(2)_msa",
+         emp_national = "Employment(1)_national",
+         hour_mean_wage_national = "Hourly mean wage_national",
+         ann_mean_wage_national = "Annual mean wage(2)_national")
+
+oes_data <- oes_data %>% 
+  rename(Occupation = "Occupation (SOC code)")
+
+oes_data$emp_msa <- as.numeric(as.character(oes_data$emp_msa))
+oes_data$hour_mean_wage_msa <- as.numeric(as.character(oes_data$hour_mean_wage_msa))
+oes_data$ann_mean_wage_msa <- as.numeric(as.character(oes_data$ann_mean_wage_msa))
+oes_data$hour_mean_wage_national <- as.numeric(as.character(oes_data$hour_mean_wage_national))
+oes_data$ann_mean_wage_national <- as.numeric(as.character(oes_data$ann_mean_wage_national))
+
+oes_data[is.na(oes_data)] = 0
+
+oes_data <- oes_data %>%
+  ungroup() %>%
+  mutate(lq = (emp_msa/sum(emp_msa, na.rm = TRUE))/(emp_national/sum(emp_national,na.rm=TRUE)))
+
+oes_data <- oes_data %>%
+  ungroup() %>%
+  mutate(hour_premium = (hour_mean_wage_msa/hour_mean_wage_national),
+         ann_premium = (ann_mean_wage_msa/ann_mean_wage_national))
+
+oes_data <- oes_data[!oes_data$Occupation == "All Occupations(000000)", ]
+
+```
+
+Using OES data, we identify the largest occupations by employment and calculate their location quotient and if their annual mean wage has a premium when compared to the nation. For the Los Angeles MSA as of May 2021, these are the top 10 occupations:
+
+```{r eval=TRUE, echo=TRUE, warning=FALSE, message=FALSE}
+oes_10 <- oes_data[order(oes_data$emp_msa,decreasing=T)[1:10],]
+
+oes_10 %>% 
+  summarize(Occupation = Occupation,
+            Employment = emp_msa,
+            LQ = lq,
+            Annual_Wage = ann_mean_wage_msa)%>%
+    arrange(desc(Employment)) %>%
+  kable(title = "Top 10 Occupations", caption = "Top 10 Occupations in Los Angeles MSA") %>%
+  kable_styling("striped",full_width = F) %>%
+  row_spec(1:5, background = '#6d597a') %>%
+  row_spec(0, bold=TRUE) %>%
+  column_spec(2:4, bold=TRUE)
+```
+
+The Cleveland Dot Plot provides another way to visualize the same data as seen above in a more simplistic way. 
+
+```{r eval=TRUE, echo=TRUE, warning=FALSE, message=FALSE}
+ggplot(oes_10, aes(x = emp_msa, y = reorder(Occupation,emp_msa))) +
+  geom_point() +
+  labs(x = "Employment",
+       y = "Occupation",
+       title = "Top 10 Occupations in Los Angeles MSA")
+```
+
+
+```{r}
+#oes2016 <- read_csv("MSA_2016.csv")
+#oes2021 <- read_csv("MSA_2021.csv")
+
+#soc_ref <- read_excel(("oes_2019_hybrid_structure.xlsx"), skip = 5) %>%
+#  janitor::clean_names("snake")
+
+#oes2016 <- oes2016 %>%
+#  select(AREA, AREA_NAME, OCC_CODE, OCC_TITLE, TOT_EMP, H_MEAN, A_MEAN)
+
+#oes2021 <- oes2021 %>%
+ # select(AREA, AREA_NAME, OCC_CODE, OCC_TITLE, TOT_EMP, H_MEAN, A_MEAN)
+
+#oes2016 <- oes2016 %>%
+ # left_join(soc_ref, by = c("OCC_CODE" = "x2010_soc_code"))
+
+#oes2016_2021 <- oes2016 %>%
+  #left_join(oes2021, by = c("OCC_CODE" = "OCC_CODE"))
+
+
+#oes2016_2021$TOT_EMP.x <- as.numeric(as.character(oes2016_2021$TOT_EMP.x))
+#oes2016_2021$TOT_EMP.y <- as.numeric(as.character(oes2016_2021$TOT_EMP.y))
+
+#oes2016_2021 <- oes2016_2021 %>%
+ # mutate(change = )
+```
+
+
+
